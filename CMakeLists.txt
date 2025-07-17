@@ -35,7 +35,7 @@ pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
 
-add_executable(WeatherStation WeatherStation.c )
+add_executable(WeatherStation WeatherStation.c  lib/aht20.c lib/bmp280.c lib/ssd1306.c lib/matriz.c)
 
 pico_set_program_name(WeatherStation "WeatherStation")
 pico_set_program_version(WeatherStation "0.1")
@@ -44,19 +44,26 @@ pico_set_program_version(WeatherStation "0.1")
 pico_enable_stdio_uart(WeatherStation 1)
 pico_enable_stdio_usb(WeatherStation 1)
 
+include_directories( ${CMAKE_SOURCE_DIR}/lib ) # Inclui os files .h na pasta lib
+
+
 # Add the standard library to the build
 target_link_libraries(WeatherStation
-        pico_stdlib)
+        pico_stdlib
+        hardware_i2c
+        hardware_pio
+        hardware_clocks
+        hardware_gpio
+        )
 
 # Add the standard include files to the build
 target_include_directories(WeatherStation PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}
 )
 
-# Add any user requested libraries
-target_link_libraries(WeatherStation 
-        
-        )
+#Gerar arquivo cabeçalho pio
+pico_generate_pio_header(${CMAKE_PROJECT_NAME} ${CMAKE_CURRENT_LIST_DIR}/lib/pio_matrix.pio)
+
 
 pico_add_extra_outputs(WeatherStation)
 
