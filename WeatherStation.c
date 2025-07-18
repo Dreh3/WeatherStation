@@ -37,6 +37,7 @@ void gpio_irq_handler(uint gpio, uint32_t events)
 };
 
 void Niveis_Matriz(float temperatura, float umidade, float max_umidade, float min_umidade, float max_temp, float min_temp);
+void display_dados ();
 
 int main()
 {
@@ -102,6 +103,9 @@ int main()
         int32_t convert_temperatura_bmp = bmp280_convert_temp(temperatura_bmp, &params);
         int32_t convert_pressao_bmp = bmp280_convert_pressure(pressao_bmp, temperatura_bmp, &params);
 
+        printf("Pressao = %.3f kPa\n", convert_pressao_bmp / 1000.0);
+        printf("Temperatura BMP: = %.2f C\n", convert_temperatura_bmp/ 100.0);
+
         //leitura do aht20
         if (aht20_read(I2C_PORT_SENSOR, &leituraAHT20)) //tirar essa depois depois que testar
         {
@@ -114,19 +118,20 @@ int main()
         };
         //Calcula a temperatura
         temperatura_final = (convert_temperatura_bmp + leituraAHT20.temperature)/2;
-
+        //printf("Pressão : %d \n", convert_pressao_bmp);
         //função para o display
 
         //função para a matriz
-        Niveis_Matriz(0, 0, 40, 0, 45, 15); //trste nivel umidade = 3, teste temperatura = 5
-
+        Niveis_Matriz(30, 20, 40, 0, 45, 15); //trste nivel umidade = 3, teste temperatura = 5
+        display_dados ();
+        sleep_ms(200);
     }
 };
 
 
 //função para o display
 
-//função para matriz 
+//função para matriz -- ok
 void Niveis_Matriz(float temperatura, float umidade, float max_umidade, float min_umidade, float max_temp, float min_temp){
 
     //umidade verde
@@ -147,10 +152,14 @@ void Niveis_Matriz(float temperatura, float umidade, float max_umidade, float mi
     uint niveis_temp = temperatura_atual/20;
     resto = fmod(temperatura_atual, 20);
     if (resto >=5){
-        niveis_temp =+1;
+        niveis_temp +=1;
     };
 
     printf("nível umidade = %d nivel temperatura = %d\n",niveis_umidade, niveis_temp); //ok até aqui 
+
+     // Garante que não ultrapasse 5
+    if (niveis_umidade > 5) niveis_umidade = 5;
+    if (niveis_temp > 5) niveis_temp = 5;
 
     //Padrão para desligar led da matriz
     COR_RGB off = {0.0,0.0,0.0};
@@ -164,23 +173,60 @@ void Niveis_Matriz(float temperatura, float umidade, float max_umidade, float mi
     for(int i = 4; i>=0; i --){
        
         for(int j = 0; j< 5; j++){
-            if(j ==1){
-                if (niveis_umidade>0)
-                    niveis_dados[i][j] = cor_umidade;
-                else
-                    niveis_dados[i][j] = off;    
-            }else if (j ==3){
-                if (niveis_temp>0)
-                    niveis_dados[i][j] = cor_temperatura;
-                else
-                    niveis_dados[i][j] = off;
+            if(j ==1 && niveis_umidade>0){
+                    niveis_dados[i][j] = cor_umidade;    
+            }else if (j ==3 && niveis_temp>0){
+                niveis_dados[i][j] = cor_temperatura;
             }else{
                 niveis_dados[i][j] = off;
             };
         };
         printf("nível umidade = %d nivel temperatura = %d\n",niveis_umidade, niveis_temp); //ok até aqui 
-        niveis_temp = niveis_temp - 1;
-        niveis_umidade = niveis_umidade - 1;
+        if (niveis_umidade > 0) niveis_umidade --;
+        if (niveis_temp > 0) niveis_temp --;
     };
     acender_leds(niveis_dados);
 };
+
+//float temperatura, float umidade, float pressao, float max_umidade, float min_umidade, float max_temp, float min_temp
+void display_dados (){
+
+    //strings para mostrar dados - 7 ao todo
+    //sprintf(str_y, "%1.0f", R_x); 
+
+    //  Atualiza o conteúdo do display com as informações necessárias
+    ssd1306_fill(&ssd, !cor);                          // Limpa o display
+    ssd1306_rect(&ssd, 3, 1, 122, 61, cor, !cor);      // Desenha um retângulo ok
+    ssd1306_line(&ssd, 3, 13, 123, 13, cor);           // Desenha uma linha ok
+    ssd1306_line(&ssd, 3, 23, 123, 23, cor);           // Desenha uma linha
+    ssd1306_line(&ssd, 3, 33, 123, 33, cor);           // Desenha uma linha
+    ssd1306_line(&ssd, 3, 43, 123, 43, cor);           // Desenha uma linha
+    ssd1306_line(&ssd, 3, 53, 123, 53, cor);           // Desenha uma linha
+    ssd1306_draw_string(&ssd, "ESTACAO M.", 22, 5); // Desenha uma string
+    //dados de umidade
+    ssd1306_draw_string(&ssd, "Umi.:", 10, 15);  // Desenha uma string
+    ssd1306_draw_string(&ssd, "20.25", 60, 15);  // Desenha uma string
+    ssd1306_draw_string(&ssd, "%", 100, 15);  // Desenha uma string
+    ssd1306_draw_string(&ssd, "Mx:", 4, 25);          // Desenha uma string
+    ssd1306_draw_string(&ssd, "20.5", 27, 25);
+    ssd1306_draw_string(&ssd, "Mn:", 64, 25);          // Desenha uma string
+    ssd1306_draw_string(&ssd, "20.5", 89, 25);
+    //dados de temperatura
+    ssd1306_draw_string(&ssd, "Temp.:", 10, 35);  // Desenha uma string
+    ssd1306_draw_string(&ssd, "20.25", 60, 35);  // Desenha uma string
+    ssd1306_draw_string(&ssd, "C", 100, 35);  // Desenha uma string
+    ssd1306_draw_string(&ssd, "Mx:", 4, 45);          // Desenha uma string
+    ssd1306_draw_string(&ssd, "20.5", 27, 45);
+    ssd1306_draw_string(&ssd, "Mn:", 64, 45);          // Desenha uma string
+    ssd1306_draw_string(&ssd, "20.5", 89, 45);
+    //dados de pressão
+    ssd1306_draw_string(&ssd, "Pres.:", 10, 55);  // Desenha uma string
+    ssd1306_draw_string(&ssd, "20.25", 60, 55);  // Desenha uma string
+    ssd1306_draw_string(&ssd, "Pa", 100, 55);  // Desenha uma string
+    
+    ssd1306_line(&ssd, 62, 23, 62, 33, cor);           // Desenha uma linha vertical umidade
+    ssd1306_line(&ssd, 62, 43, 62, 53, cor);           // Desenha uma linha vertical temperatura
+    ssd1306_send_data(&ssd);                           // Atualiza o display
+    sleep_ms(700);
+
+}
