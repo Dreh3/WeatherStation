@@ -51,6 +51,67 @@ float offset_pressao = 0;
 float offset_umidade = 0;
 float offset_temperatura = 0;  //falta máximo e mínimo e offset
 
+//-------------------------------------
+const char* graficos_html =
+"HTTP/1.1 200 OK\r\n"
+"Content-Type: text/html\r\n\r\n"
+"<!DOCTYPE html>"
+"<html lang=\"pt-BR\">"
+"<head>"
+"<meta charset=\"UTF-8\" />"
+"<title>Gráficos - Monitor Pico W</title>"
+"<script src=\"https://cdn.jsdelivr.net/npm/chart.js\"></script>"
+"<style>"
+"body { font-family: sans-serif; background: #f0f2f5; margin: 0; padding: 20px; }"
+".container { max-width: 800px; margin: auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }"
+"canvas { margin: 20px 0; max-width: 100%; }"
+"h1 { text-align: center; }"
+"a { display: block; text-align: center; margin-bottom: 20px; color: #4CAF50; text-decoration: none; font-weight: bold; }"
+"</style>"
+"</head>"
+"<body>"
+"<div class=\"container\">"
+"<a href=\"/\">← Voltar</a>"
+"<h1>Gráficos em Tempo Real</h1>"
+"<canvas id=\"tempChart\"></canvas>"
+"<canvas id=\"humChart\"></canvas>"
+"<canvas id=\"pressChart\"></canvas>"
+"</div>"
+"<script>"
+"const tempData = [], humData = [], pressData = [], labels = [];"
+"const createChart = (ctxId, label, borderColor) => { return new Chart(document.getElementById(ctxId), { type: 'line', data: { labels, datasets: [{ label, data: [], borderColor, tension: 0.3, fill: false }] }, options: { responsive: true, scales: { x: { ticks: { autoSkip: true, maxTicksLimit: 10 } } } } }); };"
+"const tempChart = createChart('tempChart', 'Temperatura (°C)', 'red');"
+"const humChart = createChart('humChart', 'Umidade (%)', 'blue');"
+"const pressChart = createChart('pressChart', 'Pressão (hPa)', 'green');"
+"async function atualizarGraficos() {"
+"try {"
+"const res = await fetch('/dados');"
+"const d = await res.json();"
+"const hora = new Date().toLocaleTimeString();"
+"if (labels.length > 20) { labels.shift(); tempData.shift(); humData.shift(); pressData.shift(); }"
+"labels.push(hora);"
+"tempData.push(d.temp.toFixed(2));"
+"humData.push(d.hum.toFixed(2));"
+"pressData.push(d.press.toFixed(2));"
+"tempChart.data.labels = labels;"
+"tempChart.data.datasets[0].data = tempData;"
+"tempChart.update();"
+"humChart.data.labels = labels;"
+"humChart.data.datasets[0].data = humData;"
+"humChart.update();"
+"pressChart.data.labels = labels;"
+"pressChart.data.datasets[0].data = pressData;"
+"pressChart.update();"
+"} catch (e) { console.error(\"Erro ao atualizar gráficos:\", e); }"
+"}"
+"setInterval(atualizarGraficos, 3000);"
+"atualizarGraficos();"
+"</script>"
+"</body>"
+"</html>";
+//-----------------------------------
+
+
 
 //Configurações para a interface WEB --------------------------------------------------
 bool wifi_connection = false;  //armazena status do wi-fi
@@ -134,7 +195,7 @@ const char HTML_BODY[] = //página formatada
         "<label>Temp Min (Valor atual: <span id=\"a_tempMin\">--</span> °C)"
         "<input name=\"tempMin\" type=\"number\" step=\"0.1\"></label>"
         "<label>Temp Max (Valor atual: <span id=\"a_tempMax\">--</span> °C)"
-            "<input name=\"tempMax\" type=\"number\" step=\"0.1\"></label>"
+        "<input name=\"tempMax\" type=\"number\" step=\"0.1\"></label>"
         "<label>Offset Temp (Valor atual: <span id=\"a_tempOffset\">--</span>)"
         "<input name=\"tempOffset\" type=\"number\" step=\"0.1\"></label>"
         "<label>Umid Min (Valor atual: <span id=\"a_humMin\">--</span> %)"
@@ -148,7 +209,7 @@ const char HTML_BODY[] = //página formatada
         "<label>Press Max (Valor atual: <span id=\"a_pressMax\">--</span> kPa)"
         "<input name=\"pressMax\" type=\"number\" step=\"0.1\"></label>"
         "<label>Offset Pressão (Valor atual: <span id=\"a_pressOffset\">--</span>)"
-            "<input name=\"pressOffset\" type=\"number\" step=\"0.1\"></label>"
+        "<input name=\"pressOffset\" type=\"number\" step=\"0.1\"></label>"
         "<button type=\"submit\">Salvar</button>"
         "</form>"
         "<div class=\"titulo-secao\">Visualização</div>"
@@ -218,6 +279,17 @@ static err_t http_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t er
                            "%s",
                            json_len, json_payload);
     }
+    else if (strstr(req, "GET /graficos") != NULL) {
+        hs->len = snprintf(hs->response, sizeof(hs->response),
+                           "HTTP/1.1 200 OK\r\n"
+                           "Content-Type: text/html\r\n"
+                           "Content-Length: %d\r\n"
+                           "Connection: close\r\n"
+                           "\r\n"
+                           "%s",
+                           (int)strlen(graficos_html), graficos_html);
+    }
+
    else if (strstr(req, "POST /config")) {
 
     printf("CHAMA O POST");
@@ -225,7 +297,7 @@ static err_t http_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t er
     if (read_data) {
         read_data += 4;
         int lidos = sscanf(read_data,
-            "{\"tempMin\":%f,\"tempMax\":%f,\"tempOffset\":%f,"
+            "{\"tempMin\" :%f,\"tempMax\" :%f,\"tempOffset\" :%f,"
             "\"humMin\":%f,\"humMax\":%f,\"humOffset\":%f,"
             "\"pressMin\":%f,\"pressMax\":%f,\"pressOffset\":%f}",
             &min_temperatura, &max_temperatura, &offset_temperatura,
