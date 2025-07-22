@@ -1,3 +1,5 @@
+//Código desenvolvido por Andressa Sousa Fonseca
+
 #include "pico/cyw43_arch.h"
 #include "lwip/tcp.h"
 #include <stdio.h>
@@ -17,8 +19,8 @@
 
 
 //Crendenciais de wi-fi
-#define WIFI_SSID "Lima"
-#define WIFI_PASS "Harrypotter"
+#define WIFI_SSID "TEMPLATE"
+#define WIFI_PASS "TEMPLATE"
 //----------------------------------------------------
 
 //definindo pinos 
@@ -155,7 +157,7 @@ static err_t http_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t er
                 pwm_set_gpio_level(Buzzer, WRAP/2); //Level metade do wrap para volume médio
                 sleep_ms(100);     //pausa entre sons
             };
-            pwm_set_gpio_level(Buzzer, 0);
+            pwm_set_gpio_level(Buzzer, 0);         //desliga o buzzer
         } else {
             printf(" Erro ao interpretar JSON no POST! Campos reconhecidos: %d\n", lidos);
             printf("Conteúdo recebido: %s\n", read_data);
@@ -238,6 +240,7 @@ void gpio_irq_handler(uint gpio, uint32_t events)
     reset_usb_boot(0, 0);
 };
 
+//protótipo das funções
 void Niveis_Matriz();
 void display_dados();
 void liga_led(uint pin);
@@ -333,7 +336,7 @@ int main()
     struct bmp280_calib_param params;
     bmp280_get_calib_params(I2C_PORT_SENSOR, &params);
     //AHT20
-     aht20_reset(I2C_PORT_SENSOR);
+    aht20_reset(I2C_PORT_SENSOR);
     aht20_init(I2C_PORT_SENSOR);
     //--------------------------------------------------------
     //Variáveis para os dados dos sensores
@@ -342,8 +345,7 @@ int main()
     int32_t temperatura_bmp;
     int32_t pressao_bmp;
 
-    //Strings para mostrar valores no display
-
+    //permite carregar a página no servidor
     start_http_server();
 
     while (true) {
@@ -388,6 +390,8 @@ int main()
         display_dados(); 
         sleep_ms(200);
     }
+    // Desligar a arquitetura CYW43.
+    cyw43_arch_deinit();
 };
 
 //função para leds
@@ -437,13 +441,13 @@ void Niveis_Matriz(){
 
     //Padrão para desligar led da matriz
     COR_RGB off = {0.0,0.0,0.0};
-    //Vetor para variar entre os estados da matriz
+    //parâmetros para cores
     COR_RGB cor_umidade = {0.004,0.004,0.001};
     COR_RGB cor_temperatura = {0.008,0.002,0.001};
 
     //matriz que será modificada no loop
     Matriz_leds niveis_dados = {{off,off,off,off,off},{off,off,off,off,off},{off,off,off,off,off},{off,off,off,off,off},{off,off,off,off,off}};
-    //acender_leds(niveis_dados);
+    
     for(int i = 4; i>=0; i --){
        
         for(int j = 0; j< 5; j++){
@@ -462,7 +466,7 @@ void Niveis_Matriz(){
     acender_leds(niveis_dados);
 };
 
-//float temperatura, float umidade, float pressao, float max_umidade, float min_umidade, float max_temp, float min_temp
+//função para exibir dados no display
 void display_dados (){
 
     //strings para mostrar dados - 7 ao todo
