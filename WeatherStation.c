@@ -4,6 +4,7 @@
 #include "pico/stdlib.h"
 #include "hardware/i2c.h"
 #include "hardware/gpio.h"
+#include "hardware/pwm.h"
 #include "aht20.h"
 #include "bmp280.h"
 #include <math.h>
@@ -12,7 +13,7 @@
 #include "lib/ssd1306.h"
 #include "lib/font.h"
 #include "lib/matriz.h"
-
+#include "lib/pages.h"
 
 
 //Crendenciais de wi-fi
@@ -21,6 +22,17 @@
 //----------------------------------------------------
 
 //definindo pinos 
+//leds
+#define led_green 11
+#define led_blue 12
+#define led_red 13
+//buzzer
+//Pino do buzzer
+#define Buzzer 21
+#define WRAP 65535
+uint sons_freq[] = {880,784,740,659};   //Frequência para os sons de alerta
+uint slice;
+pwm_config config2;
 //Sensores
 #define I2C_PORT_SENSOR i2c0               // i2c0 pinos 0 e 1, i2c1 pinos 2 e 3
 #define I2C_SDA_SENSOR 0                   // 0 ou 2
@@ -49,178 +61,7 @@ float min_pressao = 0;
 float max_pressao = 0;
 float offset_pressao = 0;
 float offset_umidade = 0;
-float offset_temperatura = 0;  //falta máximo e mínimo e offset
-
-//-------------------------------------
-const char* graficos_html =
-"HTTP/1.1 200 OK\r\n"
-"Content-Type: text/html\r\n\r\n"
-"<!DOCTYPE html>"
-"<html lang=\"pt-BR\">"
-"<head>"
-"<meta charset=\"UTF-8\" />"
-"<title>Gráficos - Monitor Pico W</title>"
-"<script src=\"https://cdn.jsdelivr.net/npm/chart.js\"></script>"
-"<style>"
-"body { font-family: sans-serif; background: #f0f2f5; margin: 0; padding: 20px; }"
-".container { max-width: 800px; margin: auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }"
-"canvas { margin: 20px 0; max-width: 100%; }"
-"h1 { text-align: center; }"
-"a { display: block; text-align: center; margin-bottom: 20px; color: #4CAF50; text-decoration: none; font-weight: bold; }"
-"</style>"
-"</head>"
-"<body>"
-"<div class=\"container\">"
-"<a href=\"/\">← Voltar</a>"
-"<h1>Gráficos em Tempo Real</h1>"
-"<canvas id=\"tempChart\"></canvas>"
-"<canvas id=\"humChart\"></canvas>"
-"<canvas id=\"pressChart\"></canvas>"
-"</div>"
-"<script>"
-"const tempData = [], humData = [], pressData = [], labels = [];"
-"const createChart = (ctxId, label, borderColor) => { return new Chart(document.getElementById(ctxId), { type: 'line', data: { labels, datasets: [{ label, data: [], borderColor, tension: 0.3, fill: false }] }, options: { responsive: true, scales: { x: { ticks: { autoSkip: true, maxTicksLimit: 10 } } } } }); };"
-"const tempChart = createChart('tempChart', 'Temperatura (°C)', 'red');"
-"const humChart = createChart('humChart', 'Umidade (%)', 'blue');"
-"const pressChart = createChart('pressChart', 'Pressão (hPa)', 'green');"
-"async function atualizarGraficos() {"
-"try {"
-"const res = await fetch('/dados');"
-"const d = await res.json();"
-"const hora = new Date().toLocaleTimeString();"
-"if (labels.length > 20) { labels.shift(); tempData.shift(); humData.shift(); pressData.shift(); }"
-"labels.push(hora);"
-"tempData.push(d.temp.toFixed(2));"
-"humData.push(d.hum.toFixed(2));"
-"pressData.push(d.press.toFixed(2));"
-"tempChart.data.labels = labels;"
-"tempChart.data.datasets[0].data = tempData;"
-"tempChart.update();"
-"humChart.data.labels = labels;"
-"humChart.data.datasets[0].data = humData;"
-"humChart.update();"
-"pressChart.data.labels = labels;"
-"pressChart.data.datasets[0].data = pressData;"
-"pressChart.update();"
-"} catch (e) { console.error(\"Erro ao atualizar gráficos:\", e); }"
-"}"
-"setInterval(atualizarGraficos, 3000);"
-"atualizarGraficos();"
-"</script>"
-"</body>"
-"</html>";
-//-----------------------------------
-
-
-
-//Configurações para a interface WEB --------------------------------------------------
-bool wifi_connection = false;  //armazena status do wi-fi
-const char HTML_BODY[] = //página formatada
-    "<!DOCTYPE html>\r\n"
-    "<html lang=\"pt-BR\">\r\n"
-    "<head>"
-    "<meta charset=\"UTF-8\" />"
-     "<title>Interface WEB</title>"
-      "<style>"
-        "body { font-family: sans-serif; background: #f0f2f5; margin: 0; padding: 20px; }"
-        ".container { max-width: 500px; margin: auto; background: white; padding: 20px;"
-            "border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }"
-        "h1, h2 { text-align: center; color: #292929; }"
-        ".sensor { display: flex; justify-content: space-between; margin: 10px 0; font-size: 1.1em; }"
-        "form label { font-size: 0.9em; margin-top: 10px; display: block; }"
-        "form input { width: 100%; padding: 6px; font-size: 1em; margin-bottom: 10px;"
-        "border: 1px solid #ccc; border-radius: 6px; }"
-        "button { width: 100%; background: #4CAF50; color: white; padding: 10px; font-size: 1em;"
-        "border: none; border-radius: 8px; cursor: pointer; }"
-        "button:hover { background: #43a047; }"
-        ".titulo-secao { margin-top: 30px; font-size: 1.1em; color: #555; text-align: center;"
-        "border-top: 1px solid #ddd; padding-top: 15px; }"
-      "</style>"
-      "<script>"
-       "window.onload = function () {"
-        "function atualizar() {"
-        "fetch('/dados').then(res => res.json()).then(d => {"
-        "document.getElementById('temp').innerText =  d.temp != null ? d.temp.toFixed(2) : \"--\";"
-        "document.getElementById('hum').innerText = d.hum != null ? d.hum.toFixed(2) : \"--\";"
-        "document.getElementById('press').innerText = d.press != null ? d.press.toFixed(2) : \"--\";"
-        "document.getElementById('a_tempMin').innerText = d.tempMin != null ? d.tempMin.toFixed(1) : \"--\";"
-        "document.getElementById('a_tempMax').innerText = d.tempMax != null ? d.tempMax.toFixed(2) : \"--\";"
-        "document.getElementById('a_tempOffset').innerText = d.tempOffset != null ? d.tempOffset.toFixed(1) : \"--\";"
-        "document.getElementById('a_humMin').innerText = d.humMin != null ? d.humMin.toFixed(1) : \"--\";"
-        "document.getElementById('a_humMax').innerText = d.humMax != null ? d.humMax.toFixed(1) : \"--\";"
-        "document.getElementById('a_humOffset').innerText = d.humOffset != null ? d.humOffset.toFixed(1) : \"--\";"
-        "document.getElementById('a_pressMin').innerText = d.pressMin != null ? d.pressMin.toFixed(1) : \"--\";"
-        "document.getElementById('a_pressMax').innerText = d.pressMax != null ? d.pressMax?.toFixed(1) : \"--\";"
-        "document.getElementById('a_pressOffset').innerText = d.pressOffset != null ? d.pressOffset?.toFixed(1) : \"--\";"
-        "});"
-        "}"
-        "setInterval(atualizar, 1000);"
-        "};"
-
-        "function enviarConfig(event) {"
-        "event.preventDefault();"
-        "const form = event.target;"
-        "const dados = {"
-        "tempMin: parseFloat(form.tempMin.value),"
-        "tempMax: parseFloat(form.tempMax.value),"
-        "tempOffset: parseFloat(form.tempOffset.value),"
-        "humMin: parseFloat(form.humMin.value),"
-        "humMax: parseFloat(form.humMax.value),"
-        "humOffset: parseFloat(form.humOffset.value),"
-        "pressMin: parseFloat(form.pressMin.value),"
-        "pressMax: parseFloat(form.pressMax.value),"
-        "pressOffset: parseFloat(form.pressOffset.value)"
-        "};"
-        "fetch('/config', {"
-        "method: 'POST',"
-        "headers: {"
-        "'Content-Type': 'application/json'"
-        "},\n"
-        "body: JSON.stringify(dados)"
-        "})"
-        ".catch(err => console.error(err));"
-    "}"
-
-        "</script>"
-
-    "</head>"
-    "<body>"
-        "<div class=\"container\">"
-        "<h1>Dados dos Sensores</h1>"
-        "<div class=\"sensor\"> Temperatura: <span id=\"temp\">--</span> °C</div>"
-        "<div class=\"sensor\"> Umidade: <span id=\"hum\">--</span> %</div>"
-        "<div class=\"sensor\"> Pressão: <span id=\"press\">--</span> kPa</div>"
-        "<div class=\"titulo-secao\">Limites e Calibração</div>"
-        "<form onsubmit=\"enviarConfig(event)\">"
-        "<label>Temp Min (Valor atual: <span id=\"a_tempMin\">--</span> °C)"
-        "<input name=\"tempMin\" type=\"number\" step=\"0.1\"></label>"
-        "<label>Temp Max (Valor atual: <span id=\"a_tempMax\">--</span> °C)"
-        "<input name=\"tempMax\" type=\"number\" step=\"0.1\"></label>"
-        "<label>Offset Temp (Valor atual: <span id=\"a_tempOffset\">--</span>)"
-        "<input name=\"tempOffset\" type=\"number\" step=\"0.1\"></label>"
-        "<label>Umid Min (Valor atual: <span id=\"a_humMin\">--</span> %)"
-        "<input name=\"humMin\" type=\"number\" step=\"0.1\"></label>"
-        "<label>Umid Max (Valor atual: <span id=\"a_humMax\">--</span> %)"
-        "<input name=\"humMax\" type=\"number\" step=\"0.1\"></label>"
-        "<label>Offset Umid (Valor atual: <span id=\"a_humOffset\">--</span>)"
-        "<input name=\"humOffset\" type=\"number\" step=\"0.1\"></label>"
-        "<label>Press Min (Valor atual: <span id=\"a_pressMin\">--</span> kPa)"
-        "<input name=\"pressMin\" type=\"number\" step=\"0.1\"></label>"
-        "<label>Press Max (Valor atual: <span id=\"a_pressMax\">--</span> kPa)"
-        "<input name=\"pressMax\" type=\"number\" step=\"0.1\"></label>"
-        "<label>Offset Pressão (Valor atual: <span id=\"a_pressOffset\">--</span>)"
-        "<input name=\"pressOffset\" type=\"number\" step=\"0.1\"></label>"
-        "<button type=\"submit\">Salvar</button>"
-        "</form>"
-        "<div class=\"titulo-secao\">Visualização</div>"
-        "<div style=\"text-align: center; margin-top: 10px;\">"
-        "<a href=\"graficos\" style=\"text-decoration: none; color: #4CAF50; font-weight: bold;\">"
-        "Ver Gráficos</a>"
-        "</div>"
-      "</div>"
-    "</body>"
-    "</html>";
-
+float offset_temperatura = 0; 
 
 struct http_state
 {
@@ -288,11 +129,12 @@ static err_t http_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t er
                            "\r\n"
                            "%s",
                            (int)strlen(graficos_html), graficos_html);
+
+    
     }
 
    else if (strstr(req, "POST /config")) {
 
-    printf("CHAMA O POST");
     char *read_data = strstr(req, "\r\n\r\n");
     if (read_data) {
         read_data += 4;
@@ -306,16 +148,20 @@ static err_t http_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t er
 
         if (lidos == 9) {
             printf(" POST recebido com sucesso:\n");
-            printf("Temp: min=%.1f, max=%.1f, offset=%.1f\n", min_temperatura, max_temperatura, offset_temperatura);
-            printf("Umid: min=%.1f, max=%.1f, offset=%.1f\n", min_umidade, max_umidade, offset_umidade);
-            printf("Press: min=%.1f, max=%.1f, offset=%,1f\n", min_pressao, max_pressao, offset_pressao);
+            //um alerta sonoro 
+            for(int i =0; i<4; i++){                //Laço de repetição para modificar as frequência do som de alerta
+                pwm_config_set_clkdiv(&config2, clock_get_hz(clk_sys) / (sons_freq[i] * WRAP));
+                pwm_init(slice, &config2, true);
+                pwm_set_gpio_level(Buzzer, WRAP/2); //Level metade do wrap para volume médio
+                sleep_ms(100);     //pausa entre sons
+            };
+            pwm_set_gpio_level(Buzzer, 0);
         } else {
             printf(" Erro ao interpretar JSON no POST! Campos reconhecidos: %d\n", lidos);
             printf("Conteúdo recebido: %s\n", read_data);
         }
-
+        
     }
-
     // Cria resposta
     char json_payload[200];
     int json_len = snprintf(json_payload, sizeof(json_payload),
@@ -335,7 +181,6 @@ static err_t http_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t er
         "%s",
         json_len, json_payload);
     }
-
     else
     {
         hs->len = snprintf(hs->response, sizeof(hs->response),
@@ -395,6 +240,7 @@ void gpio_irq_handler(uint gpio, uint32_t events)
 
 void Niveis_Matriz();
 void display_dados();
+void liga_led(uint pin);
 
 int main()
 {
@@ -406,6 +252,28 @@ int main()
     gpio_set_dir(Button_B, GPIO_IN);
     gpio_pull_up(Button_B);
     gpio_set_irq_enabled_with_callback(Button_B, GPIO_IRQ_EDGE_FALL, true, &gpio_irq_handler);
+    
+    //leds ------------------------------------------------------------------------------------------------
+    gpio_init(led_blue);
+    gpio_init(led_red);
+    gpio_init(led_green);
+    gpio_set_dir(led_blue, GPIO_OUT);
+    gpio_set_dir(led_red, GPIO_OUT);
+    gpio_set_dir(led_green, GPIO_OUT);
+    gpio_put(led_blue, 0);
+    gpio_put(led_red, 0);
+    gpio_put(led_green, 0);
+
+    //buzzer-----------------------------------------------------------------------------------------------
+    //Configurações de PWM
+    gpio_set_function(Buzzer, GPIO_FUNC_PWM);   //Configura pino do led como pwm
+    slice = pwm_gpio_to_slice_num(Buzzer);      //Adiquire o slice do pino
+    pwm_config config = pwm_get_default_config();
+    config2 = config;
+    pwm_config_set_clkdiv(&config, clock_get_hz(clk_sys) / (4400 * WRAP));
+    pwm_init(slice, &config, true);
+    pwm_set_gpio_level(Buzzer, 0);              //Determina com o level desejado - Inicialmente desligado
+
 
     //Display ---------------------------------------------------------------------------------------------
     // I2C do Display funcionando em 400Khz 
@@ -487,34 +355,57 @@ int main()
         int32_t convert_temperatura_bmp = bmp280_convert_temp(temperatura_bmp, &params);
         pressao = ((bmp280_convert_pressure(pressao_bmp, temperatura_bmp, &params))/1000) + offset_pressao;
 
-        printf("Pressao = %.3f kPa\n", pressao);
-        printf("Temperatura BMP: = %.2f C\n", convert_temperatura_bmp/ 100.0);
+        //printf("Pressao = %.3f kPa\n", pressao);
+        //printf("Temperatura BMP: = %.2f C\n", convert_temperatura_bmp/ 100.0);
 
         //leitura do aht20
         if (aht20_read(I2C_PORT_SENSOR, &leituraAHT20)) //tirar essa depois depois que testar
         {
-            printf("Temperatura AHT: %.2f C\n", leituraAHT20.temperature);
-            printf("Umidade: %.2f %%\n\n\n", leituraAHT20.humidity);
+            //printf("Temperatura AHT: %.2f C\n", leituraAHT20.temperature);
+            //printf("Umidade: %.2f %%\n\n\n", leituraAHT20.humidity);
             umidade = leituraAHT20.humidity + offset_umidade;
         }
         else
         {
-            printf("Erro na leitura do AHT10!\n\n\n");
+            printf("\nErro na leitura do AHT10!\n");
         };
         //Calcula a média das temperaturas
         temperatura_final = ((convert_temperatura_bmp/100 + leituraAHT20.temperature)/2) + offset_temperatura;
         //printf("Pressão : %d \n", convert_pressao_bmp);
-        //função para o display
+        
+        //leds
+        if(temperatura_final>=max_temperatura && pressao >= max_pressao && umidade>= max_umidade){
+            liga_led(led_red);
+        }else if (temperatura_final<max_temperatura && pressao < max_pressao && umidade< max_umidade){
+            liga_led(led_green);
+        }else{
+            liga_led(led_blue);
+        };
 
         //função para a matriz
-        Niveis_Matriz(); //trste nivel umidade = 3, teste temperatura = 5
-        display_dados(); //colocar parâmetros depois --Usra variáveis globais
+        Niveis_Matriz(); 
+        //função para o display
+        display_dados(); 
         sleep_ms(200);
     }
 };
 
+//função para leds
+void liga_led(uint pin){
+    gpio_put(pin, 1);
+    if(pin==13){
+        gpio_put(led_blue, 0);
+        gpio_put(led_green, 0);
+    }else if(pin ==12){
+        gpio_put(led_green, 0);
+        gpio_put(led_red, 0);
+    }else{
+        gpio_put(led_blue, 0);
+        gpio_put(led_red, 0);
+    };
+};
 
-//função para matriz -- ok
+//função para matriz
 void Niveis_Matriz(){
 
     //umidade verde
@@ -538,7 +429,7 @@ void Niveis_Matriz(){
         niveis_temp +=1;
     };
 
-    printf("nível umidade = %d nivel temperatura = %d\n",niveis_umidade, niveis_temp); //ok até aqui 
+    //printf("nível umidade = %d nivel temperatura = %d\n",niveis_umidade, niveis_temp); //ok até aqui 
 
      // Garante que não ultrapasse 5
     if (niveis_umidade > 5) niveis_umidade = 5;
@@ -564,7 +455,7 @@ void Niveis_Matriz(){
                 niveis_dados[i][j] = off;
             };
         };
-        printf("nível umidade = %d nivel temperatura = %d\n",niveis_umidade, niveis_temp); //ok até aqui 
+        //printf("nível umidade = %d nivel temperatura = %d\n",niveis_umidade, niveis_temp); //ok até aqui 
         if (niveis_umidade > 0) niveis_umidade --;
         if (niveis_temp > 0) niveis_temp --;
     };
@@ -583,13 +474,13 @@ void display_dados (){
     char str_umi[5];
     sprintf(str_umi,"%.2f",umidade);
     char str_min_umi[5];
-    sprintf(str_min_umi,"%.2f",min_umidade);
+    sprintf(str_min_umi,"%.0f",min_umidade);
     char str_max_umi[5];
-    sprintf(str_max_umi,"%.2f",max_umidade);
+    sprintf(str_max_umi,"%.0f",max_umidade);
     char str_min_temp[5];
-    sprintf(str_min_temp,"%.2f",min_temperatura);
+    sprintf(str_min_temp,"%.0f",min_temperatura);
     char str_max_temp[5];
-    sprintf(str_max_temp,"%.2f",max_temperatura);
+    sprintf(str_max_temp,"%.0f",max_temperatura);
 
     //  Atualiza o conteúdo do display com as informações necessárias
     ssd1306_fill(&ssd, !cor);                          // Limpa o display
@@ -601,9 +492,9 @@ void display_dados (){
     ssd1306_line(&ssd, 3, 53, 123, 53, cor);           // Desenha uma linha
     ssd1306_draw_string(&ssd, "WI-FI:", 22, 5); 
     if(wifi_connection)                         //Mostra status de conexão
-        ssd1306_draw_string(&ssd, "ON", 50, 5); 
+        ssd1306_draw_string(&ssd, "ON", 78, 5); 
     else
-        ssd1306_draw_string(&ssd, "OFF", 50, 5); // Desenha uma string
+        ssd1306_draw_string(&ssd, "OFF", 78, 5); // Desenha uma string
     //dados de umidade
     ssd1306_draw_string(&ssd, "Umi.:", 10, 15);  
     ssd1306_draw_string(&ssd, str_umi, 60, 15);  
@@ -623,7 +514,7 @@ void display_dados (){
     //dados de pressão
     ssd1306_draw_string(&ssd, "Pres.:", 10, 55); 
     ssd1306_draw_string(&ssd, str_pressao, 60, 55);  
-    ssd1306_draw_string(&ssd, "kPa", 108, 55);  
+    ssd1306_draw_string(&ssd, "kPa", 90, 55);  
     
     ssd1306_line(&ssd, 62, 23, 62, 33, cor);           // Desenha uma linha vertical umidade
     ssd1306_line(&ssd, 62, 43, 62, 53, cor);           // Desenha uma linha vertical temperatura

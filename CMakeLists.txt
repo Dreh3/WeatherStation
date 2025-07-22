@@ -55,6 +55,7 @@ target_link_libraries(WeatherStation
         hardware_clocks
         hardware_gpio
         pico_cyw43_arch_lwip_threadsafe_background
+        hardware_pwm
         )
 
 # Add the standard include files to the build
